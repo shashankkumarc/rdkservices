@@ -53,6 +53,10 @@ All notable changes to this RDK Service will be documented in this file.
 ## [1.0.12] - 2022-10-18
 ### Changed
 - API access on all versions of the handler
+## [1.1.11] - 2022-11-08
+### Changed
+- Handled identifying Atmos sink capability for all audio output ports and host capability
+
 
 ## [1.0.11] - 2022-10-14
 ### Changed

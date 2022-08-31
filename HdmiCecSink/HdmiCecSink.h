@@ -32,12 +32,13 @@
 #undef Assert // this define from Connection.hpp conflicts with WPEFramework
 
 #include "Module.h"
-#include "utils.h"
 #include "tptimer.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <chrono>
+
+#include "UtilsLogging.h"
 
 namespace WPEFramework {
 
@@ -263,7 +264,9 @@ namespace WPEFramework {
 			PhysicalAddress m_physicalAddr;
 			DeviceNode m_deviceChain[3];
 			
-			HdmiPortMap(uint8_t portID) : m_portID(portID), 	    m_physicalAddr(portID+1,0,0,0),m_logicalAddr(LogicalAddress::UNREGISTERED)
+			HdmiPortMap(uint8_t portID) : m_portID(portID),
+							m_logicalAddr(LogicalAddress::UNREGISTERED),
+							m_physicalAddr(portID+1,0,0,0)
 			{
 				m_isConnected = false;
 			}
@@ -285,7 +288,7 @@ namespace WPEFramework {
 				if ( m_logicalAddr.toInt() != LogicalAddress::UNREGISTERED &&
 						m_logicalAddr.toInt() != logical_addr.toInt() )
 				{
-					LOGINFO(" update own logicalAddr = %d, new devcie logicalAddress", m_logicalAddr.toInt(), logical_addr.toInt() );
+					LOGINFO(" update own logicalAddr = %d, new devcie logicalAddress = %d", m_logicalAddr.toInt(), logical_addr.toInt() );
 					/* check matching with this port's physical address */
 					if( physical_addr.getByteValue(0) == m_physicalAddr.getByteValue(0) &&
 							physical_addr.getByteValue(1) != 0 )

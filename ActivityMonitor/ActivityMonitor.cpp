@@ -38,11 +38,29 @@
 
 #define CALLSIGN_PARAMETER "-C"
 
+#define API_VERSION_NUMBER_MAJOR 1
+#define API_VERSION_NUMBER_MINOR 0
+#define API_VERSION_NUMBER_PATCH 0
+
 namespace WPEFramework
 {
+    namespace {
+
+        static Plugin::Metadata<Plugin::ActivityMonitor> metadata(
+            // Version (Major, Minor, Patch)
+            API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH,
+            // Preconditions
+            {},
+            // Terminations
+            {},
+            // Controls
+            {}
+        );
+    }
+
     namespace Plugin
     {
-        SERVICE_REGISTRATION(ActivityMonitor, 1, 0);
+        SERVICE_REGISTRATION(ActivityMonitor, API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH);
 
         ActivityMonitor* ActivityMonitor::_instance = nullptr;
 
@@ -603,7 +621,7 @@ namespace WPEFramework
 
             buf.data()[buf.size() - 1] = 0;
 
-            int pos = 0;
+            unsigned int pos = 0;
             while (pos < buf.size())
             {
                 if (0 == strcmp(buf.data() + pos, CALLSIGN_PARAMETER))
@@ -693,7 +711,7 @@ namespace WPEFramework
                             lastIdx = idx;
                         }
                     }
-                    else if (ppids[idx] == getpid()) // if there is no waylandregistryreceiver.conf, monitoring the children of WPEFramework with "-C <callsign>" parameter
+                    else if (ppids[idx] == static_cast<unsigned int>(getpid())) // if there is no waylandregistryreceiver.conf, monitoring the children of WPEFramework with "-C <callsign>" parameter
                     {
                         if (pid2callSign.find(pids[idx]) == pid2callSign.end())
                         {

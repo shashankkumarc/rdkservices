@@ -38,8 +38,12 @@
 #include <algorithm>
 
 #include "MaintenanceManager.h"
-#include "utils.h"
+
 #include "UtilsIarm.h"
+#include "UtilsJsonRpc.h"
+#include "UtilsSecurityToken.h"
+#include "UtilscRunScript.h"
+#include "UtilsfileExists.h"
 
 enum eRetval { E_NOK = -1,
     E_OK };
@@ -48,10 +52,6 @@ enum eRetval { E_NOK = -1,
 #include "libIARM.h"
 
 #endif /* USE_IARMBUS || USE_IARM_BUS */
-
-#if defined(HAS_API_SYSTEM) && defined(HAS_API_POWERSTATE)
-#include "powerstate.h"
-#endif /* HAS_API_SYSTEM && HAS_API_POWERSTATE */
 
 #ifdef ENABLE_DEVICE_MANUFACTURER_INFO
 #include "mfrMgr.h"
@@ -67,6 +67,7 @@ using namespace std;
 
 #define API_VERSION_NUMBER_MAJOR 1
 #define API_VERSION_NUMBER_MINOR 0
+#define API_VERSION_NUMBER_PATCH 2
 #define SERVER_DETAILS  "127.0.0.1:9998"
 
 
@@ -167,9 +168,24 @@ string moduleStatusToString(IARM_Maint_module_status_t &status)
  * @brief WPEFramework class for Maintenance Manager
  */
 namespace WPEFramework {
+
+    namespace {
+
+        static Plugin::Metadata<Plugin::MaintenanceManager> metadata(
+            // Version (Major, Minor, Patch)
+            API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH,
+            // Preconditions
+            {},
+            // Terminations
+            {},
+            // Controls
+            {}
+        );
+    }
+
     namespace Plugin {
         //Prototypes
-        SERVICE_REGISTRATION(MaintenanceManager,API_VERSION_NUMBER_MAJOR,API_VERSION_NUMBER_MINOR);
+        SERVICE_REGISTRATION(MaintenanceManager, API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH);
         /* Global time variable */
         MaintenanceManager* MaintenanceManager::_instance = nullptr;
 
@@ -756,6 +772,8 @@ namespace WPEFramework {
                             /*will be set to false once COMEPLETE/ERROR received for LOGUPLOAD*/
                             LOGINFO(" LOGUPLOAD already IN PROGRESS -> setting m_task_map of LOGUPLOAD to true \n");
                             break;
+                        default:
+                            break;
                     }
                 }
                 else{
@@ -913,7 +931,6 @@ namespace WPEFramework {
         {
             bool result = false;
             string starttime="";
-            unsigned long int start_time=0;
 
             starttime = Utils::cRunScript("/lib/rdk/getMaintenanceStartTime.sh &");
             if (!starttime.empty()){
@@ -1114,11 +1131,8 @@ namespace WPEFramework {
                 JsonObject& response)
                 {
                     bool result = false;
-                    int32_t exec_status=E_NOK;
-                    Maint_notify_status_t notify_status = MAINTENANCE_IDLE;
                     /* check what mode we currently have */
                     string current_mode="";
-                    bool skip_task=false;
 
                     /* only one maintenance at a time */
                     /* Lock so that m_notify_status will not be updated  further */
@@ -1143,6 +1157,12 @@ namespace WPEFramework {
                         /* we set this to false */
                         g_is_critical_maintenance="false";
 
+                        /* if there is any active thread, join it before executing the tasks from startMaintenance
+                        * especially when device is in offline mode*/
+                        if(m_thread.joinable()){
+                            m_thread.join();
+                        }
+
                         m_thread = std::thread(&MaintenanceManager::task_execution_thread, _instance);
 
                         result=true;
@@ -1165,14 +1185,14 @@ namespace WPEFramework {
         uint32_t MaintenanceManager::stopMaintenance(const JsonObject& parameters,
                 JsonObject& response){
 
+                bool result=false;
                 if( checkAbortFlag() ) {
-                    bool result=false;
                     result=stopMaintenanceTasks();
-                    returnResponse(result);
                 }
                 else {
                     LOGINFO("Failed to initiate stopMaintenance, RFC is set as False\n");
                 }
+                returnResponse(result);
         }
 
         bool MaintenanceManager::stopMaintenanceTasks(){
@@ -1220,7 +1240,7 @@ namespace WPEFramework {
                                     task_incomplete = true;
                                 }
                                 else{
-                                    LOGINFO("Failed to terminate with error %d \n",script_names[i].c_str(),k_ret);
+                                    LOGINFO("Failed to terminate with error %s - %d \n",script_names[i].c_str(),k_ret);
                                 }
                             }
                             else {
@@ -1290,7 +1310,6 @@ namespace WPEFramework {
             struct dirent* ent;
             char* endptr;
             char buf[512];
-            char *ch =0;
 
             while((ent = readdir(dir)) != NULL) {
                 long lpid = strtol(ent->d_name, &endptr, 10);

@@ -14,8 +14,9 @@
 #include "UtilsJsonRpc.h"
 #include "UtilsIarm.h"
 
-const short WPEFramework::Plugin::UsbAccess::API_VERSION_NUMBER_MAJOR = 2;
-const short WPEFramework::Plugin::UsbAccess::API_VERSION_NUMBER_MINOR = 0;
+#define API_VERSION_NUMBER_MAJOR 1
+#define API_VERSION_NUMBER_MINOR 0
+#define API_VERSION_NUMBER_PATCH 0
 const string WPEFramework::Plugin::UsbAccess::SERVICE_NAME = "org.rdk.UsbAccess";
 const string WPEFramework::Plugin::UsbAccess::METHOD_GET_FILE_LIST = "getFileList";
 const string WPEFramework::Plugin::UsbAccess::METHOD_CREATE_LINK = "createLink";
@@ -43,6 +44,21 @@ const WPEFramework::Plugin::UsbAccess::ArchiveLogsErrorMap WPEFramework::Plugin:
 };
 
 namespace WPEFramework {
+
+namespace {
+
+    static Plugin::Metadata<Plugin::UsbAccess> metadata(
+        // Version (Major, Minor, Patch)
+        API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH,
+        // Preconditions
+        {},
+        // Terminations
+        {},
+        // Controls
+        {}
+    );
+}
+
 namespace Plugin {
 
     namespace {
@@ -105,14 +121,14 @@ namespace Plugin {
 
         time_t fileModTime(const char* filename) {
             struct stat st;
-            time_t mod_time;
+            time_t mod_time = 0;
             if (stat(filename, &st) == 0)
                 mod_time = st.st_mtime;
             return mod_time;
         }
     }
 
-    SERVICE_REGISTRATION(UsbAccess, UsbAccess::API_VERSION_NUMBER_MAJOR, UsbAccess::API_VERSION_NUMBER_MINOR);
+    SERVICE_REGISTRATION(UsbAccess, API_VERSION_NUMBER_MAJOR, API_VERSION_NUMBER_MINOR, API_VERSION_NUMBER_PATCH);
 
     UsbAccess* UsbAccess::_instance = nullptr;
 
@@ -408,12 +424,12 @@ namespace Plugin {
     {
         if (strcmp(owner, IARM_BUS_SYSMGR_NAME) != 0)
         {
-            LOGERR("unexpected event: owner %s, eventId: %d, data: %p, size: %lu.", owner, (int)eventId, data, len);
+            LOGERR("unexpected event: owner %s, eventId: %d, data: %p, size: %zu.", owner, (int)eventId, data, len);
             return;
         }
         if (data == nullptr || len == 0)
         {
-            LOGERR("event with NO DATA: eventId: %d, data: %p, size: %lu.", (int)eventId, data, len);
+            LOGERR("event with NO DATA: eventId: %d, data: %p, size: %zu.", (int)eventId, data, len);
             return;
         }
 
@@ -426,7 +442,7 @@ namespace Plugin {
                 break;
             }
             default:
-                LOGWARN("unexpected event: owner %s, eventId: %d, data: %p, size: %lu.", owner, (int)eventId, data, len);
+                LOGWARN("unexpected event: owner %s, eventId: %d, data: %p, size: %zu.", owner, (int)eventId, data, len);
                 break;
         }
     }

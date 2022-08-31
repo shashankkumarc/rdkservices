@@ -24,7 +24,13 @@
 #include <map>
 
 #include "SystemServicesHelper.h"
-#include "utils.h"
+
+#include "rfcapi.h"
+
+#include "UtilsCStr.h"
+#include "UtilsLogging.h"
+#include "UtilscRunScript.h"
+#include "UtilsfileExists.h"
 
 #define TR181_MTLS_LOGUPLOAD "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.MTLS.mTlsLogUpload.Enable"
 #define TR181_LOGUPLOAD_BEF_DEEPSLEEP "Device.DeviceInfo.X_RDKCENTRAL-COM_RFC.Feature.LogUploadBeforeDeepSleep.Enable"
@@ -68,7 +74,7 @@ namespace
         err_t ret = OK;
 
         CURL *curl;
-        CURLcode res;
+        CURLcode res = CURLE_UPLOAD_FAILED;
         long http_code = 0;
         std::stringstream read;
         string data = "filename=" + filename;
@@ -136,7 +142,7 @@ namespace
         err_t ret = OK;
 
         CURL *curl;
-        CURLcode res;
+        CURLcode res = CURLE_UPLOAD_FAILED;
         long http_code = 0;
         FILE *fd;
         struct stat file_info;

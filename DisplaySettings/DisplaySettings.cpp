@@ -436,6 +436,7 @@ namespace WPEFramework {
 			    }
 
 			    if(m_subscribed) {
+#if 0
 				JsonObject aPortArcEnableResult;
 				JsonObject aPortArcEnableParam;
 				aPortArcEnableParam.Set(_T("audioPort"),"HDMI_ARC0");
@@ -448,6 +449,7 @@ namespace WPEFramework {
                                 else {
                                     LOGINFO("%s: Audio Port : [HDMI_ARC0] initialized successfully, enable: %d\n", __FUNCTION__, arcEnable);
                                 }
+#endif
 
 				LOGINFO("m_hdmiCecAudioDeviceDetected status [%d] ... \n", m_hdmiCecAudioDeviceDetected);
 			     if (m_hdmiCecAudioDeviceDetected)

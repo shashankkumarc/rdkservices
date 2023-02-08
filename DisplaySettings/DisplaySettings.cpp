@@ -5000,17 +5000,14 @@ void DisplaySettings::sendMsgThread()
             } else{
 	        m_hdmiCecAudioDeviceDetected = false;
 		m_hdmiInAudioDevicePowerState = AUDIO_DEVICE_POWER_STATE_UNKNOWN;
-		if (m_hdmiInAudioDeviceType == dsAUDIOARCSUPPORT_ARC) {
-		    if (m_AudioDeviceSADState != AUDIO_DEVICE_SAD_CLEARED) {
-		        m_AudioDeviceSADState = AUDIO_DEVICE_SAD_CLEARED;
-		        LOGINFO("%s: Clearing Audio device SAD\n", __FUNCTION__);
-		        //clear the SAD list
-		        sad_list.clear();
-		    } else {
-		        LOGINFO("SAD already cleared\n");
-	            }
-		}
-
+	        if (m_AudioDeviceSADState != AUDIO_DEVICE_SAD_CLEARED) {
+	            m_AudioDeviceSADState = AUDIO_DEVICE_SAD_CLEARED;
+	            LOGINFO("%s: Clearing Audio device SAD\n", __FUNCTION__);
+	            //clear the SAD list
+	            sad_list.clear();
+	        } else {
+	            LOGINFO("SAD already cleared\n");
+	        }
             }
 	    LOGINFO("updated m_hdmiCecAudioDeviceDetected status [%d] ... \n", m_hdmiCecAudioDeviceDetected);
 

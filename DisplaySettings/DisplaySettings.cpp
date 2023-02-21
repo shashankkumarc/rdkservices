@@ -87,6 +87,7 @@ using namespace std;
 static bool isCecEnabled = false;
 static int  hdmiArcPortId = -1;
 static int retryPowerRequestCount = 0;
+static int audioPortInit = 0;
 std::vector<int> sad_list;
 #ifdef USE_IARM
 namespace
@@ -4162,6 +4163,11 @@ namespace WPEFramework {
                 aPort.setEnablePersist(pEnable);
                 dsError_t eRet = dsERR_GENERAL;
                 LOGWARN("Calling DisplaySettings::setEnableAudioPort audioPort:%s pEnable:%d \n", audioPort.c_str(), pEnable);
+		if (!audioPortInit) {
+		    LOGWARN("Audio port initialisation is not yet complete, retry enabling audio ports after init!!!!!!!!!\n");
+		    success = false;
+		    returnResponse(success);
+		}
                 //if not HDMI_ARC port
                 if(audioPort.compare("HDMI_ARC0")) {
                     eRet = aPort.setEnablePort (pEnable);                    

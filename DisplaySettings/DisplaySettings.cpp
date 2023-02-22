@@ -370,10 +370,11 @@ namespace WPEFramework {
         {   //sample servicemanager response: {"success":true,"supportedAudioPorts":["HDMI0"]}
             //LOGINFOMETHOD();
             LOGINFO("Entering DisplaySettings::InitAudioPorts");
-            uint32_t ret = Core::ERROR_NONE;
+           // uint32_t ret = Core::ERROR_NONE;
 	    m_systemAudioMode_Power_RequestedAndReceived = true; //resetting this variable for bootup for AVR case
             try
             {
+		std::lock_guard<std::mutex> lock(m_audioPortInit);
                 device::List<device::AudioOutputPort> aPorts = device::Host::getInstance().getAudioOutputPorts();
                 for (size_t i = 0; i < aPorts.size(); i++)
                 {
@@ -467,10 +468,8 @@ namespace WPEFramework {
 			}
                     }
                     else {
-                        JsonObject aPortHdmiEnableResult;
-                        JsonObject aPortHdmiEnableParam;
-  
-                        aPortHdmiEnableParam.Set(_T("audioPort"), portName); //aPortHdmiEnableParam.Set(_T("audioPort"),"HDMI0");
+			LOGINFO("Applying persistance setting for the Audio Port: [%s]",  portName.c_str());
+			bool pEnable;			
                         //Get value from ds srv persistence
                         #ifdef APP_CONTROL_AUDIOPORT_INIT
                         if(isPortPersistenceValEnabled) {
@@ -479,19 +478,24 @@ namespace WPEFramework {
                         if(isPortPersistenceValEnabled || !m_hdmiCecAudioDeviceDetected) {
                            LOGWARN("Audio Port : APP_CONTROL_AUDIOPORT_INIT Disabled\n");
                         #endif
-                            aPortHdmiEnableParam.Set(_T("enable"),true);
+			    pEnable = true;
                         }
                         else {
-                            aPortHdmiEnableParam.Set(_T("enable"),false);
+			    pEnable = false;
                         }
-
-                        ret = setEnableAudioPort (aPortHdmiEnableParam, aPortHdmiEnableResult);
-
-                        if(ret != Core::ERROR_NONE) {
-                            LOGWARN("Audio Port : [%s] enable: %d failed ! error code%d\n", portName.c_str(), isPortPersistenceValEnabled, ret);
-                        }
-                        else {
-                            LOGINFO("Audio Port : [%s] initialized successfully, enable: %d\n", portName.c_str(), isPortPersistenceValEnabled);
+			dsError_t eRet = dsERR_GENERAL;
+			device::AudioOutputPort aPort = device::Host::getInstance().getAudioOutputPort(portName);
+			eRet = aPort.setEnablePort (pEnable);
+			if (dsERR_NONE != eRet) {
+                            LOGWARN("DisplaySettings::setEnableAudioPort aPort.setEnablePort retuned %04x \n", eRet);
+                            LOGWARN("Audio Port : [%s] enable: %d failed !\n", portName.c_str(), isPortPersistenceValEnabled);
+                        } else {
+			    LOGINFO("Audio Port : [%s] initialized successfully, enable: %d\n", portName.c_str(), isPortPersistenceValEnabled);
+			}
+			//Apply Mute persistance settings
+			if (aPort.isMuted()) {
+                            LOGWARN("DisplaySettings::setEnableAudioPort aPort.isMuted()\n");
+                            aPort.setMuted(true);
                         }
                     }
                 }
@@ -4157,6 +4161,7 @@ namespace WPEFramework {
 
             try
             {
+		std::lock_guard<std::mutex> lock(m_audioPortInit);
                 device::AudioOutputPort aPort = device::Host::getInstance().getAudioOutputPort(audioPort);
                 //Save the user settings irrespective of actual call passed or failed.
                 aPort.setEnablePersist(pEnable);

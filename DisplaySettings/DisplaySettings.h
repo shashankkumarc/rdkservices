@@ -235,6 +235,7 @@ namespace WPEFramework {
             bool m_subscribed;
             std::mutex m_callMutex;
             std::mutex m_SadMutex;
+            std::mutex m_audioPortInit;
 	    std::thread m_arcRoutingThread;
 	    std::mutex m_AudioDeviceStatesUpdateMutex;
 	    bool m_cecArcRoutingThreadRun; 

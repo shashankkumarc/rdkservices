@@ -16,6 +16,11 @@ All notable changes to this RDK Service will be documented in this file.
 
 * For more details, refer to [versioning](https://github.com/rdkcentral/rdkservices#versioning) section under Main README.
 
+## [1.0.10] - 2023-03-07
+### Fixed
+- Fixed Blocked sending events to Displaysettings when panel power state is STANDBY
+- Fixed Parallel execution of event handlers
+
 ## [1.0.9] - 2022-12-31
 ### Fixed
 - Updated documentation for sendKeyEvent thunder API.

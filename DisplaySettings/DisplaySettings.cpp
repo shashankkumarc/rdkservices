@@ -368,139 +368,80 @@ namespace WPEFramework {
      
         void DisplaySettings::InitAudioPorts() 
         {   //sample servicemanager response: {"success":true,"supportedAudioPorts":["HDMI0"]}
-            //LOGINFOMETHOD();
-            LOGINFO("Entering DisplaySettings::InitAudioPorts");
-            uint32_t ret = Core::ERROR_NONE;
-	    m_systemAudioMode_Power_RequestedAndReceived = true; //resetting this variable for bootup for AVR case
-            try
-            {
-                device::List<device::AudioOutputPort> aPorts = device::Host::getInstance().getAudioOutputPorts();
-                for (size_t i = 0; i < aPorts.size(); i++)
-                {
-                    device::AudioOutputPort &vPort = aPorts.at(i);
-                    string portName  = vPort.getName();
-                    //By default all the ports enabled.
-                    bool isPortPersistenceValEnabled = true;
-                    LOGINFO("DisplaySettings::InitAudioPorts getting port persistance");
-                    try {
-                        isPortPersistenceValEnabled = vPort.getEnablePersist ();
-                    }
-                    catch(const device::Exception& err)
-                    {
-                        LOGWARN("Audio Port : [%s] Getting enable persist value failed. Proceeding with true\n", portName.c_str());
-                    }
-                    LOGWARN("Audio Port : [%s] InitAudioPorts isPortPersistenceValEnabled:%d\n", portName.c_str(), isPortPersistenceValEnabled);
-                    try {
-                        m_hdmiCecAudioDeviceDetected = getHdmiCecSinkAudioDeviceConnectedStatus();
-                    }
-                    catch (const device::Exception& err){
-                        LOG_DEVICE_EXCEPTION1(string("HDMI_ARC0"));
-                    } 
-                    if (portName == "HDMI_ARC0") {
-                        int portId = -1;
-                        vPort.getHdmiArcPortId(&portId);
-                        if(portId >= 0) {
-                           hdmiArcPortId = portId;
-                           LOGWARN("HDMI ARC port ID hdmiArcPortId=%d\n",hdmiArcPortId);
-                        }
+			//LOGINFOMETHOD();
+			LOGINFO("Entering DisplaySettings::InitAudioPorts");
+			std::string audioPort("HDMI_ARC0");
+			m_systemAudioMode_Power_RequestedAndReceived = true; //resetting this variable for bootup for AVR case
+			try
+			{
+				device::AudioOutputPort aPort = device::Host::getInstance().getAudioOutputPort(audioPort);
+				try {
+					m_hdmiCecAudioDeviceDetected = getHdmiCecSinkAudioDeviceConnectedStatus();
+				}
+				catch (const device::Exception& err){
+					LOG_DEVICE_EXCEPTION1(string("HDMI_ARC0"));
+				} 
+				int portId = -1;
+				aPort.getHdmiArcPortId(&portId);
+				if(portId >= 0) {
+					hdmiArcPortId = portId;
+					LOGWARN("HDMI ARC port ID hdmiArcPortId=%d\n",hdmiArcPortId);
+				}
 
-                        //Set audio port config. ARC will be set up by onTimer()
-                        #ifdef APP_CONTROL_AUDIOPORT_INIT
-                        if(isPortPersistenceValEnabled ) {
-                            LOGWARN("Audio Port : APP_CONTROL_AUDIOPORT_INIT Enabled\n");
-                        #else
-                        if(isPortPersistenceValEnabled &&  m_hdmiCecAudioDeviceDetected) {
-                            LOGWARN("Audio Port : APP_CONTROL_AUDIOPORT_INIT Disabled\n");
-                        #endif 
-                            m_audioOutputPortConfig["HDMI_ARC"] = true;
-                        }
-                        else {
-                            m_audioOutputPortConfig["HDMI_ARC"] = false;
-                        }
+				//Set audio port config. ARC will be set up by onTimer()
+				//Stop timer if its already running
+				if(m_timer.isActive()) {
+					m_timer.stop();
+				}
 
-                        //Stop timer if its already running
-                        if(m_timer.isActive()) {
-                            m_timer.stop();
-                        }
+				try {
+					isCecEnabled = getHdmiCecSinkCecEnableStatus();
+				}
+				catch (const device::Exception& err){
+					LOG_DEVICE_EXCEPTION1(string("HDMI_ARC0"));
+				}
 
-			try {
-		    		isCecEnabled = getHdmiCecSinkCecEnableStatus();
+				PluginHost::IShell::state state;
+				if ((getServiceState(m_service, HDMICECSINK_CALLSIGN, state) == Core::ERROR_NONE) && (state == PluginHost::IShell::state::ACTIVATED)) {
+					LOGINFO("%s is active", HDMICECSINK_CALLSIGN);
+
+					if(!m_subscribed) {
+						if((subscribeForHdmiCecSinkEvent(HDMICECSINK_ARC_INITIATION_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_ARC_TERMINATION_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_SHORT_AUDIO_DESCRIPTOR_EVENT)== Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_SYSTEM_AUDIO_MODE_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_AUDIO_DEVICE_CONNECTED_STATUS_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_CEC_ENABLED_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_AUDIO_DEVICE_POWER_STATUS_EVENT) == Core::ERROR_NONE)) {
+							m_subscribed = true;
+							LOGINFO("%s: HdmiCecSink event subscription completed.\n",__FUNCTION__);
+						}
+					}
+
+					if(m_subscribed) {
+						LOGINFO("m_hdmiCecAudioDeviceDetected status [%d] ... \n", m_hdmiCecAudioDeviceDetected);
+
+						if (m_hdmiCecAudioDeviceDetected)
+						{
+							m_systemAudioMode_Power_RequestedAndReceived = false; // Means we have not received system audio mode ON or power ON msg from AVR.
+							sendMsgToQueue(SEND_AUDIO_DEVICE_POWERON_MSG, NULL);
+							LOGINFO("Audio Port : [HDMI_ARC0] sendHdmiCecSinkAudioDevicePowerOn !!! \n");
+							// Some AVR's and SB are not sending response for power on message even though it is in ON state
+							// Send power request immediately to query power status of the AVR
+							LOGINFO("[HDMI_ARC0] Starting the timer to check audio device power status after power on msg!!!\n");
+							m_AudioDevicePowerOnStatusTimer.start(AUDIO_DEVICE_POWER_TRANSITION_TIME_IN_MILLISECONDS);
+						} /*m_hdmiCecAudioDeviceDetected */
+						else {
+							LOGINFO("Starting the timer to recheck audio device connection state after : %d ms\n", AUDIO_DEVICE_CONNECTION_CHECK_TIME_IN_MILLISECONDS);
+							m_AudioDeviceDetectTimer.start(AUDIO_DEVICE_CONNECTION_CHECK_TIME_IN_MILLISECONDS);
+						}
+					}
+				}
+				else {
+					//Start the timer only if the device supports HDMI_ARC
+					LOGINFO("Starting the timer");
+					m_timer.start(RECONNECTION_TIME_IN_MILLISECONDS);
+				}
 			}
-			catch (const device::Exception& err){
-				LOG_DEVICE_EXCEPTION1(string("HDMI_ARC0"));
+			catch(const device::Exception& err)
+			{
+				LOGWARN("Audio Port : InitAudioPorts failed\n");
+				LOG_DEVICE_EXCEPTION0();
 			}
-
-            PluginHost::IShell::state state;
-            if ((getServiceState(m_service, HDMICECSINK_CALLSIGN, state) == Core::ERROR_NONE) && (state == PluginHost::IShell::state::ACTIVATED)) {
-                LOGINFO("%s is active", HDMICECSINK_CALLSIGN);
-
-                if(!m_subscribed) {
-			        if((subscribeForHdmiCecSinkEvent(HDMICECSINK_ARC_INITIATION_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_ARC_TERMINATION_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_SHORT_AUDIO_DESCRIPTOR_EVENT)== Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_SYSTEM_AUDIO_MODE_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_AUDIO_DEVICE_CONNECTED_STATUS_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_CEC_ENABLED_EVENT) == Core::ERROR_NONE) && (subscribeForHdmiCecSinkEvent(HDMICECSINK_AUDIO_DEVICE_POWER_STATUS_EVENT) == Core::ERROR_NONE)) {
-                                    m_subscribed = true;
-                                    LOGINFO("%s: HdmiCecSink event subscription completed.\n",__FUNCTION__);
-			        }
-			    }
-
-			    if(m_subscribed) {
-			     LOGINFO("m_hdmiCecAudioDeviceDetected status [%d] ... \n", m_hdmiCecAudioDeviceDetected);
-
-			     if (m_hdmiCecAudioDeviceDetected)
-			     {
-	                        m_systemAudioMode_Power_RequestedAndReceived = false; // Means we have not received system audio mode ON or power ON msg from AVR.
-                                sendMsgToQueue(SEND_AUDIO_DEVICE_POWERON_MSG, NULL);
-				LOGINFO("Audio Port : [HDMI_ARC0] sendHdmiCecSinkAudioDevicePowerOn !!! \n");
-				// Some AVR's and SB are not sending response for power on message even though it is in ON state
-				// Send power request immediately to query power status of the AVR
-				 LOGINFO("[HDMI_ARC0] Starting the timer to check audio device power status after power on msg!!!\n");
-				 m_AudioDevicePowerOnStatusTimer.start(AUDIO_DEVICE_POWER_TRANSITION_TIME_IN_MILLISECONDS);
-			     } /*m_hdmiCecAudioDeviceDetected */
-                             else {
-                                 LOGINFO("Starting the timer to recheck audio device connection state after : %d ms\n", AUDIO_DEVICE_CONNECTION_CHECK_TIME_IN_MILLISECONDS);
-                                 m_AudioDeviceDetectTimer.start(AUDIO_DEVICE_CONNECTION_CHECK_TIME_IN_MILLISECONDS);
-                             }
-                            }
-			}
-			else {
-                            //Start the timer only if the device supports HDMI_ARC
-                            LOGINFO("Starting the timer");
-                            m_timer.start(RECONNECTION_TIME_IN_MILLISECONDS);
-			}
-                    }
-                    else {
-                        JsonObject aPortHdmiEnableResult;
-                        JsonObject aPortHdmiEnableParam;
-  
-                        aPortHdmiEnableParam.Set(_T("audioPort"), portName); //aPortHdmiEnableParam.Set(_T("audioPort"),"HDMI0");
-                        //Get value from ds srv persistence
-                        #ifdef APP_CONTROL_AUDIOPORT_INIT
-                        if(isPortPersistenceValEnabled) {
-                           LOGWARN("Audio Port : APP_CONTROL_AUDIOPORT_INIT Enabled\n");
-                        #else
-                        if(isPortPersistenceValEnabled || !m_hdmiCecAudioDeviceDetected) {
-                           LOGWARN("Audio Port : APP_CONTROL_AUDIOPORT_INIT Disabled\n");
-                        #endif
-                            aPortHdmiEnableParam.Set(_T("enable"),true);
-                        }
-                        else {
-                            aPortHdmiEnableParam.Set(_T("enable"),false);
-                        }
-
-                        ret = setEnableAudioPort (aPortHdmiEnableParam, aPortHdmiEnableResult);
-
-                        if(ret != Core::ERROR_NONE) {
-                            LOGWARN("Audio Port : [%s] enable: %d failed ! error code%d\n", portName.c_str(), isPortPersistenceValEnabled, ret);
-                        }
-                        else {
-                            LOGINFO("Audio Port : [%s] initialized successfully, enable: %d\n", portName.c_str(), isPortPersistenceValEnabled);
-                        }
-                    }
-                }
-            }
-            catch(const device::Exception& err)
-            {
-                LOGWARN("Audio Port : InitAudioPorts failed\n");
-                LOG_DEVICE_EXCEPTION0();
-            }
         }
 
         const string DisplaySettings::Initialize(PluginHost::IShell* service)

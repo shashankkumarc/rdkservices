@@ -336,6 +336,7 @@ namespace WPEFramework {
             registerMethod("setPreferredColorDepth", &DisplaySettings::setPreferredColorDepth, this);
             registerMethod("getPreferredColorDepth", &DisplaySettings::getPreferredColorDepth, this);
             registerMethod("getColorDepthCapabilities", &DisplaySettings::getColorDepthCapabilities, this);
+	    registerMethod("getPlatformMS12ConfigDetails", &DisplaySettings::getPlatformMS12ConfigDetails, this);
             
 
 	    m_subscribed = false; //HdmiCecSink event subscription
@@ -4078,6 +4079,24 @@ namespace WPEFramework {
             setResponseArray(response, "capabilities", colorDepthCapabilities);
             returnResponse(true);
         }
+
+	uint32_t DisplaySettings::getPlatformMS12ConfigDetails(const JsonObject& parameters, JsonObject& response)
+       {
+           LOGINFOMETHOD();
+           bool success = true;
+           std::string type;
+           try {
+               device::Host::getInstance().getMS12ConfigDetails(type);
+               LOGINFO("Platform supports MS12 Config Z\n");
+               response["config"] = type;
+           }
+           catch(const device::Exception& err)
+            {
+                LOG_DEVICE_EXCEPTION1(string("MS12ConfigType"));
+                success = false;
+            }
+           returnResponse(success);
+       }
 
         bool DisplaySettings::setUpHdmiCecSinkArcRouting (bool arcEnable)
         {

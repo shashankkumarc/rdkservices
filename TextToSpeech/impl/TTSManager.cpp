@@ -36,7 +36,6 @@ TTSManager::TTSManager(TTSEventCallback *callback) :
     // Setup Speaker passing the read configuration
     m_speaker = new TTSSpeaker(m_defaultConfiguration);
     m_downloader = NULL;
-    m_needsConfigStoreUpdate = false;
 }
 
 TTSManager::~TTSManager() {
@@ -116,11 +115,19 @@ TTS_Error TTSManager::listVoices(std::string language, std::vector<std::string> 
 }
 
 TTS_Error TTSManager::setConfiguration(Configuration &configuration) {
+    TTSLOG_TRACE("Setting Default Configuration");
+    bool updated = false;
     std::string v = m_defaultConfiguration.voice();
 
     m_defaultConfiguration.setEndPoint(configuration.ttsEndPoint);
     m_defaultConfiguration.setSecureEndPoint(configuration.ttsEndPointSecured);
-
+    if(m_defaultConfiguration.setApiKey(configuration.apiKey))
+    {
+       if(m_defaultConfiguration.isFallbackEnabled() && (m_defaultConfiguration.getFallbackPath()).empty())
+        { 
+           updated = true;
+        }
+    }
     /* Set default voice for the language only when voice is empty*/
     if(!configuration.language.empty() && configuration.voice.empty()) {
         std::vector<std::string> voices;
@@ -130,17 +137,26 @@ TTS_Error TTSManager::setConfiguration(Configuration &configuration) {
             return TTS_FAIL;
         }
         else {
-            m_needsConfigStoreUpdate |= m_defaultConfiguration.setVoice(voices.front());
-            m_needsConfigStoreUpdate |= m_defaultConfiguration.setLanguage(configuration.language);
+            updated |= m_defaultConfiguration.setVoice(voices.front());
+            updated |= m_defaultConfiguration.setLanguage(configuration.language);
         }
     }
     else {
-        m_needsConfigStoreUpdate |= m_defaultConfiguration.setVoice(configuration.voice);
-        m_needsConfigStoreUpdate |= m_defaultConfiguration.setLanguage(configuration.language);
+        updated |= m_defaultConfiguration.setVoice(configuration.voice);
+        updated |= m_defaultConfiguration.setLanguage(configuration.language);
     }
 
-    m_needsConfigStoreUpdate |= m_defaultConfiguration.setVolume(configuration.volume);
-    m_needsConfigStoreUpdate |= m_defaultConfiguration.setRate(configuration.rate);
+    updated |= m_defaultConfiguration.setVolume(configuration.volume);
+    updated |= m_defaultConfiguration.setRate(configuration.rate);
+    updated |= m_defaultConfiguration.setPrimVolDuck(configuration.primVolDuck);
+    updated |= m_defaultConfiguration.setFallBackText(configuration.data);
+
+    if(m_defaultConfiguration.endPoint().empty() && !m_defaultConfiguration.secureEndPoint().empty())
+        m_defaultConfiguration.setEndPoint(m_defaultConfiguration.secureEndPoint());
+    else if(m_defaultConfiguration.secureEndPoint().empty() && !m_defaultConfiguration.endPoint().empty())
+        m_defaultConfiguration.setSecureEndPoint(m_defaultConfiguration.endPoint());
+    else if(m_defaultConfiguration.endPoint().empty() && m_defaultConfiguration.secureEndPoint().empty())
+        TTSLOG_WARNING("TTSEndPoint & SecureTTSEndPoints are empty!!!");
 
     TTSLOG_INFO("Default config updated, endPoint=%s, secureEndPoint=%s, lang=%s, voice=%s, vol=%lf, rate=%u",
             m_defaultConfiguration.endPoint().c_str(),
@@ -152,39 +168,13 @@ TTS_Error TTSManager::setConfiguration(Configuration &configuration) {
 
     if(v !=  m_defaultConfiguration.voice())
         m_callback->onVoiceChanged(m_defaultConfiguration.voice());
-    //if any of the configuration attribute changes..config store gets updated
-    if(m_needsConfigStoreUpdate)
+    if(updated)
     {
         if(m_defaultConfiguration.isFallbackEnabled())
         {
             initiateDownload();
         }
         m_defaultConfiguration.updateConfigStore();
-        m_needsConfigStoreUpdate = false;
-    }
-    return TTS_OK;
-}
-
-TTS_Error TTSManager::setFallbackText(FallbackData &data)
-{
-    m_needsConfigStoreUpdate |= m_defaultConfiguration.setFallBackText(data);
-    return TTS_OK;
-}
-
-TTS_Error TTSManager::setPrimaryVolDuck(const uint8_t prim)
-{
-    m_needsConfigStoreUpdate |= m_defaultConfiguration.setPrimVolDuck(prim);
-    return TTS_OK;
-}
-
-TTS_Error TTSManager::setAPIKey(string apikey)
-{
-    if(m_defaultConfiguration.setApiKey(apikey))
-    {
-       if(m_defaultConfiguration.isFallbackEnabled() && (m_defaultConfiguration.getFallbackPath()).empty())
-        {
-           m_needsConfigStoreUpdate = true;
-        }
     }
     return TTS_OK;
 }
@@ -238,10 +228,8 @@ TTS_Error TTSManager::resume(uint32_t id) {
 
 TTS_Error TTSManager::shut(uint32_t id) {
     TTSLOG_TRACE("Shut");
-
     if(m_speaker)
         m_speaker->cancelSpeech(id);
-
     return TTS_OK;
 }
 

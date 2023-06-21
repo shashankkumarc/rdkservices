@@ -26,6 +26,8 @@
 #define TTS_MINOR_VERSION 0
 
 #define GET_STR(map, key, def) ((map.HasLabel(key) && !map[key].String().empty() && map[key].String() != "null") ? map[key].String() : def)
+#define CONVERT_PARAMETERS_TOJSON() JsonObject parameters, response; parameters.FromString(input);
+#define CONVERT_PARAMETERS_FROMJSON() response.ToString(output);
 
 #undef returnResponse
 #define returnResponse(success) \
@@ -136,125 +138,126 @@ namespace Plugin {
         _adminLock.Unlock();
     }
 
-    uint32_t TextToSpeechImplementation::Request(PluginHost::IStateControl::command command)
+    uint32_t TextToSpeechImplementation::Enable(const string &input, string &output)
     {
-        // Not implemented
-        return Core::ERROR_GENERAL;
-    }
-
-    uint32_t TextToSpeechImplementation::Enable(const bool enable)
-    {
+        CONVERT_PARAMETERS_TOJSON();
         CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("enabletts");
+
         _adminLock.Lock();
-        auto status = _ttsManager->enableTTS(enable);
+
+        auto status = _ttsManager->enableTTS(parameters["enabletts"].Boolean());
+
         _adminLock.Unlock();
-        TTSLOG_INFO("Enable TTS %s", enable ? "Enabled" : "Disabled");
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
+
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
     }
 
-    uint32_t TextToSpeechImplementation::ListVoices(const string language,RPC::IStringIterator*& voices) const
+    uint32_t TextToSpeechImplementation::ListVoices(const string &input, string &output)
     {
+        CONVERT_PARAMETERS_TOJSON();
         CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("language");
+
         _adminLock.Lock();
+
         std::vector<std::string> voice;
-        auto status = _ttsManager->listVoices(language,voice);
-        voices = (Core::Service<RPC::StringIterator>::Create<RPC::IStringIterator>(voice));
+        auto status = _ttsManager->listVoices(parameters["language"].String(), voice);
+
         _adminLock.Unlock();
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
+
+        if(status == TTS::TTS_OK)
+            setResponseArray(response, "voices", voice);
+
+        logResponse(status,response);
+        returnResponse(status == TTS::TTS_OK);
     }
 
-    uint32_t TextToSpeechImplementation::SetConfiguration(const Exchange::ITextToSpeech::Configuration &object,Exchange::ITextToSpeech::TTSErrorDetail &ttsStatus)
+    uint32_t TextToSpeechImplementation::SetConfiguration(const string &input, string &output)
     {
+        CONVERT_PARAMETERS_TOJSON();
+        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+
         TTS::Configuration config;
-        config.ttsEndPoint = object.ttsEndPoint;
-        config.ttsEndPointSecured = object.ttsEndPointSecured;
-        config.language =  object.language;
-        config.voice =  object.voice;
-        config.volume = (double) object.volume;
-        config.rate =  object.rate;
+        config.ttsEndPoint = GET_STR(parameters, "ttsendpoint", "");
+        config.ttsEndPointSecured = GET_STR(parameters, "ttsendpointsecured", "");
+        config.language = GET_STR(parameters, "language", "");
+        config.voice = GET_STR(parameters, "voice", "");
+        config.volume = std::stod(GET_STR(parameters, "volume", "0.0"));
+        config.primVolDuck = std::stoi(GET_STR(parameters,"primvolduckpercent","-1"));
+
+        if(parameters.HasLabel("rate")) {
+            int rate=0;
+            getNumberParameter("rate", rate);
+            config.rate = static_cast<uint8_t>(rate);
+        }
+
+        if(parameters.HasLabel("authinfo")) {
+            JsonObject auth;
+            auth = parameters["authinfo"].Object();
+            if(((auth["type"].String()).compare("apikey")) == 0)
+            {
+                config.apiKey = GET_STR(auth,"value", "");
+            }
+        }
+
+        if(parameters.HasLabel("fallbacktext")) {
+            JsonObject fallback;
+            fallback = parameters["fallbacktext"].Object();
+            config.data.scenario = fallback["scenario"].String();
+            config.data.value    = fallback["value"].String();
+            config.data.path     = GET_STR(fallback,"path", "");
+        }
+
         _adminLock.Lock();
+
         auto status = _ttsManager->setConfiguration(config);
-        ttsStatus = (Exchange::ITextToSpeech::TTSErrorDetail) status;
+
         _adminLock.Unlock();
 
-        TTSLOG_INFO("Set Configuration invoked\n");
-        TTSLOG_INFO("TTSEndPoint : %s", config.ttsEndPoint.c_str());
-        TTSLOG_INFO("SecureTTSEndPoint : %s", config.ttsEndPointSecured.c_str());
-        TTSLOG_INFO("Language : %s", config.language.c_str());
-        TTSLOG_INFO("Voice : %s", config.voice.c_str());
-        TTSLOG_INFO("Volume : %lf",config.volume);
-        TTSLOG_INFO("Rate : %u", config.rate);
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
     }
 
-    uint32_t TextToSpeechImplementation::SetFallbackText(const string scenario,const string value)
+    uint32_t TextToSpeechImplementation::GetConfiguration(const string &input, string &output)
     {
-        FallbackData data;
-        data.scenario = scenario;
-        data.value = value;
-        data.path ="";
-        _adminLock.Lock();
-        _ttsManager->setFallbackText(data);
-        _adminLock.Unlock();
-        TTSLOG_INFO("Fallback text updated scenario %s.. value %s\n",scenario.c_str(),value.c_str());
-        return (Core::ERROR_NONE);
-    }
+        CONVERT_PARAMETERS_TOJSON();
+        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
 
-    uint32_t TextToSpeechImplementation::SetPrimaryVolDuck(const uint8_t prim)
-    {
         _adminLock.Lock();
-        _ttsManager->setPrimaryVolDuck((int8_t)prim);
-        _adminLock.Unlock();
-        TTSLOG_INFO("prim volume duck updated %d\n",prim);
-        return (Core::ERROR_NONE);
-    }
 
-    uint32_t TextToSpeechImplementation::SetAPIKey(const string apikey)
-    {
-        _adminLock.Lock();
-        _ttsManager->setAPIKey(apikey);
-        _adminLock.Unlock();
-        TTSLOG_INFO("api key updated\n");
-        return (Core::ERROR_NONE);
-    }
-
-    uint32_t TextToSpeechImplementation::GetConfiguration(Exchange::ITextToSpeech::Configuration &exchangeConfig) const
-    {
-        _adminLock.Lock();
         TTS::Configuration ttsConfig;
         auto status = _ttsManager->getConfiguration(ttsConfig);
+
         _adminLock.Unlock();
 
         if(status == TTS::TTS_OK) {
-            exchangeConfig.ttsEndPoint    = ttsConfig.ttsEndPoint;
-            exchangeConfig.ttsEndPointSecured = ttsConfig.ttsEndPointSecured;
-            exchangeConfig.language           = ttsConfig.language;
-            exchangeConfig.voice              = ttsConfig.voice;
-            exchangeConfig.rate               = (uint8_t) ttsConfig.rate;
-            exchangeConfig.volume             = (uint8_t) ttsConfig.volume;
+            response["ttsendpoint"]         = ttsConfig.ttsEndPoint;
+            response["ttsendpointsecured"]  = ttsConfig.ttsEndPointSecured;
+            response["language"]            = ttsConfig.language;
+            response["voice"]               = ttsConfig.voice;
+            response["rate"]                = (int) ttsConfig.rate;
+            response["volume"]              = std::to_string(ttsConfig.volume);
         }
-        TTSLOG_INFO("Get Configuration invoked\n");
-        TTSLOG_INFO("TTSEndPoint : %s",  ttsConfig.ttsEndPoint.c_str());
-        TTSLOG_INFO("SecureTTSEndPoint : %s", ttsConfig.ttsEndPointSecured.c_str());
-        TTSLOG_INFO("Language : %s",  ttsConfig.language.c_str());
-        TTSLOG_INFO("Voice : %s",  ttsConfig.voice.c_str());
-        TTSLOG_INFO("Volume : %lf", ttsConfig.volume);
-        TTSLOG_INFO("Rate : %u",  ttsConfig.rate);
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
+
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
     }
 
-    uint32_t TextToSpeechImplementation::Enable(bool &enable) const
+    uint32_t TextToSpeechImplementation::IsEnabled(const string &input, string &output)
     {
+        CONVERT_PARAMETERS_TOJSON();
         CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+
         _adminLock.Lock();
-        enable = _ttsManager->isTTSEnabled();
+
+        response["isenabled"] = JsonValue((bool)_ttsManager->isTTSEnabled());
+
         _adminLock.Unlock();
-        TTSLOG_INFO("Is TTS Enabled %s", enable ? "Enabled" : "Disabled");
-        return (Core::ERROR_NONE);
+
+        logResponse(TTS::TTS_OK,response);
+        returnResponse(true);
     }
 
     uint32_t nextSpeechId() {
@@ -266,80 +269,131 @@ namespace Plugin {
         return ++counter;
     }
 
-    uint32_t TextToSpeechImplementation::Speak(const string text,uint32_t &speechid,Exchange::ITextToSpeech::TTSErrorDetail &ttsStatus)
+    uint32_t TextToSpeechImplementation::Speak(const string &input, string &output)
     {
+        CONVERT_PARAMETERS_TOJSON();
         CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("text");
+
         _adminLock.Lock();
-        speechid = nextSpeechId();
-        auto status = _ttsManager->speak(speechid,text);
-        ttsStatus = (Exchange::ITextToSpeech::TTSErrorDetail) status;
+
+        uint32_t speechId = nextSpeechId();
+        auto status = _ttsManager->speak(speechId, parameters["text"].String());
+
         _adminLock.Unlock();
 
-        if(status != TTS::TTS_OK)
-         {
-            speechid = -1;
-         }
-        TTSLOG_INFO("Speak invoked with text %s and speech id returned %d\n",text.c_str(),speechid);
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
-    }
-
-    uint32_t TextToSpeechImplementation::Cancel(const uint32_t speechid)
-    {
-        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
-        _adminLock.Lock();
-        auto status = _ttsManager->shut(speechid);
-        _adminLock.Unlock();
-        TTSLOG_INFO("Cancel invoked with speechid %d",speechid);
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
-    }
-
-    uint32_t TextToSpeechImplementation::Pause(const uint32_t speechid,Exchange::ITextToSpeech::TTSErrorDetail &ttsStatus)
-    {
-        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
-        _adminLock.Lock();
-        auto status =  _ttsManager->pause(speechid);
-        ttsStatus = (Exchange::ITextToSpeech::TTSErrorDetail) status;
-        _adminLock.Unlock();
-        TTSLOG_INFO("Pause invoked with speechid %d",speechid);
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
-    }
-
-    uint32_t TextToSpeechImplementation::Resume(const uint32_t speechid,Exchange::ITextToSpeech::TTSErrorDetail &ttsStatus)
-    {
-        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
-        _adminLock.Lock();
-        auto status = _ttsManager->resume(speechid);
-        ttsStatus = (Exchange::ITextToSpeech::TTSErrorDetail) status;
-        _adminLock.Unlock();
-        TTSLOG_INFO("Resume invoked with speechid %d",speechid);
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
-    }
-
-
-    uint32_t TextToSpeechImplementation::GetSpeechState(const  uint32_t speechid,Exchange::ITextToSpeech::SpeechState &estate)
-    {
-        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
-        _adminLock.Lock();
-        TTS::SpeechState state;
-        auto status = _ttsManager->getSpeechState(speechid, state);
-        _adminLock.Unlock();
         if(status == TTS::TTS_OK)
-            estate = (Exchange::ITextToSpeech::SpeechState) state;
+            response["speechid"] = (int) speechId;
+        else
+            response["speechid"] = (int) -1;
 
-        logResponse(status);
-        return (status == TTS::TTS_OK) ? (Core::ERROR_NONE) : (Core::ERROR_GENERAL);
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
     }
 
-    void TextToSpeechImplementation::dispatchEvent(Event event, const JsonValue &params)
+    uint32_t TextToSpeechImplementation::Cancel(const string &input, string &output)
     {
-        Core::IWorkerPool::Instance().Submit(Job::Create(this, event, params));
+        CONVERT_PARAMETERS_TOJSON();
+        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("speechid");
+
+        _adminLock.Lock();
+
+        auto status = _ttsManager->shut(parameters["speechid"].Number());
+
+        _adminLock.Unlock();
+
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
     }
 
-    void TextToSpeechImplementation::Dispatch(Event event, const JsonValue params)
+
+    uint32_t TextToSpeechImplementation::Pause(const string &input, string &output)
+    {
+        CONVERT_PARAMETERS_TOJSON();
+        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("speechid");
+
+        _adminLock.Lock();
+
+        auto status = _ttsManager->pause(parameters["speechid"].Number());
+
+        _adminLock.Unlock();
+
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
+    }
+
+    uint32_t TextToSpeechImplementation::Resume(const string &input, string &output)
+    {
+        CONVERT_PARAMETERS_TOJSON();
+        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("speechid");
+
+        _adminLock.Lock();
+
+        auto status = _ttsManager->resume(parameters["speechid"].Number());
+
+        _adminLock.Unlock();
+
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
+    }
+
+    uint32_t TextToSpeechImplementation::IsSpeaking(const string &input, string &output)
+    {
+        CONVERT_PARAMETERS_TOJSON();
+        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("speechid");
+
+        _adminLock.Lock();
+
+        bool speaking = false;
+        auto status = _ttsManager->isSpeaking(parameters["speechid"].Number(), speaking);
+
+        _adminLock.Unlock();
+
+        response["speaking"] = speaking;
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
+    }
+
+    uint32_t TextToSpeechImplementation::GetSpeechState(const string &input, string &output)
+    {
+        CONVERT_PARAMETERS_TOJSON();
+        CHECK_TTS_MANAGER_RETURN_ON_FAIL();
+        CHECK_TTS_PARAMETER_RETURN_ON_FAIL("speechid");
+
+        _adminLock.Lock();
+
+        TTS::SpeechState state;
+        auto status = _ttsManager->getSpeechState(parameters["speechid"].Number(), state);
+
+        _adminLock.Unlock();
+
+        if(status == TTS::TTS_OK)
+            response["speechstate"] = (int) state;
+
+        logResponse(status, response);
+        returnResponse(status == TTS::TTS_OK);
+    }
+
+    void TextToSpeechImplementation::setResponseArray(JsonObject& response, const char* key, const std::vector<std::string>& items)
+    {
+        JsonArray arr;
+        for(auto& i : items) arr.Add(JsonValue(i));
+
+        response[key] = arr;
+    }
+
+    void TextToSpeechImplementation::dispatchEvent(Event event, JsonObject &params)
+    {
+        string data;
+        params.ToString(data);
+        Core::IWorkerPool::Instance().Submit(Job::Create(this, event, data));
+    }
+
+    void TextToSpeechImplementation::Dispatch(Event event, string data)
     {
         _adminLock.Lock();
 
@@ -347,17 +401,17 @@ namespace Plugin {
 
         while (index != _notificationClients.end()) {
             switch(event) {
-                case STATE_CHANGED:     (*index)->Enabled(params.Boolean()); break;
-                case VOICE_CHANGED:     (*index)->VoiceChanged(params.String()); break;
-                case WILL_SPEAK:        (*index)->WillSpeak(params.Number()); break;
-                case SPEECH_START:      (*index)->SpeechStart(params.Number()); break;
-                case SPEECH_PAUSE:      (*index)->SpeechPause(params.Number()); break;
-                case SPEECH_RESUME:     (*index)->SpeechResume(params.Number()); break;
-                case SPEECH_INTERRUPT:  (*index)->SpeechInterrupted(params.Number()); break;
-                case NETWORK_ERROR:     (*index)->NetworkError(params.Number()); break;
-                case PLAYBACK_ERROR:    (*index)->PlaybackError(params.Number()); break;
-                case SPEECH_COMPLETE:   (*index)->SpeechComplete(params.Number()); break;
-                default: break;
+                case STATE_CHANGED:     (*index)->StateChanged(data); break;
+                case VOICE_CHANGED:     (*index)->VoiceChanged(data); break;
+                case WILL_SPEAK:        (*index)->WillSpeak(data); break;
+                case SPEECH_START:      (*index)->SpeechStart(data); break;
+                case SPEECH_PAUSE:      (*index)->SpeechPause(data); break;
+                case SPEECH_RESUME:     (*index)->SpeechResume(data); break;
+                case SPEECH_CANCEL:     (*index)->SpeechCancelled(data); break;
+                case SPEECH_INTERRUPT:  (*index)->SpeechInterrupted(data); break;
+                case NETWORK_ERROR:     (*index)->NetworkError(data); break;
+                case PLAYBACK_ERROR:    (*index)->PlaybackError(data); break;
+                case SPEECH_COMPLETE:   (*index)->SpeechComplete(data); break;
             }
             ++index;
         }
@@ -368,32 +422,46 @@ namespace Plugin {
 
     void TextToSpeechImplementation::onTTSStateChanged(bool state)
     {
-        dispatchEvent(STATE_CHANGED, JsonValue((bool)state));
+        JsonObject params;
+        params["state"] = JsonValue((bool)state);
+        dispatchEvent(STATE_CHANGED, params);
     }
 
     void TextToSpeechImplementation::onVoiceChanged(std::string voice)
     {
-        dispatchEvent(VOICE_CHANGED, JsonValue((std::string)voice));
+        JsonObject params;
+        params["voice"] = voice;
+        dispatchEvent(VOICE_CHANGED, params);
     }
 
     void TextToSpeechImplementation::onWillSpeak(TTS::SpeechData &data)
     {
-        dispatchEvent(WILL_SPEAK, JsonValue((int)data.id));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)data.id);
+        params["text"]      = data.text;
+        dispatchEvent(WILL_SPEAK, params);
     }
 
     void TextToSpeechImplementation::onSpeechStart(TTS::SpeechData &data)
     {
-        dispatchEvent(SPEECH_START, JsonValue((int)data.id));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)data.id);
+        params["text"]      = data.text;
+        dispatchEvent(SPEECH_START, params);
     }
 
     void TextToSpeechImplementation::onSpeechPause(uint32_t speechId)
     {
-        dispatchEvent(SPEECH_PAUSE, JsonValue((int)speechId));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)speechId);
+        dispatchEvent(SPEECH_PAUSE, params);
     }
 
     void TextToSpeechImplementation::onSpeechResume(uint32_t speechId)
     {
-        dispatchEvent(SPEECH_RESUME, JsonValue((int)speechId));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)speechId);
+        dispatchEvent(SPEECH_RESUME, params);
     }
 
     void TextToSpeechImplementation::onSpeechCancelled(std::vector<uint32_t> speechIds)
@@ -412,26 +480,36 @@ namespace Plugin {
 
     void TextToSpeechImplementation::onSpeechInterrupted(uint32_t speechId)
     {
-        dispatchEvent(SPEECH_INTERRUPT, JsonValue((int)speechId));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)speechId);
+        dispatchEvent(SPEECH_INTERRUPT, params);
     }
 
     void TextToSpeechImplementation::onNetworkError(uint32_t speechId)
     {
-        dispatchEvent(NETWORK_ERROR, JsonValue((int)speechId));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)speechId);
+        dispatchEvent(NETWORK_ERROR, params);
     }
 
     void TextToSpeechImplementation::onPlaybackError(uint32_t speechId)
     {
-        dispatchEvent(PLAYBACK_ERROR, JsonValue((int)speechId));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)speechId);
+        dispatchEvent(PLAYBACK_ERROR, params);
     }
 
     void TextToSpeechImplementation::onSpeechComplete(TTS::SpeechData &data)
     {
-        dispatchEvent(SPEECH_COMPLETE, JsonValue((int)data.id));
+        JsonObject params;
+        params["speechid"]  = JsonValue((int)data.id);
+        params["text"]      = data.text;
+        dispatchEvent(SPEECH_COMPLETE, params);
     }
 
-    void logResponse(TTS::TTS_Error X)
+    void logResponse(TTS::TTS_Error X, JsonObject& response)
     {
+        response["TTS_Status"] = static_cast<uint32_t>(X);
         switch (X){
             case (TTS::TTS_OK):
                 TTSLOG_VERBOSE("%s api operational success with TTS_OK code = %d", __func__, X);
@@ -447,6 +525,7 @@ namespace Plugin {
                 break;
             default:
                 TTSLOG_ERROR("%s api failed with unknow error code = %d", __func__, X);
+                response["TTS_Status"] = static_cast<uint32_t>(TTS::TTS_FAIL);
         }
     }
 

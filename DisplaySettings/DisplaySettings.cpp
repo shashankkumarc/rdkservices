@@ -2921,9 +2921,9 @@ namespace WPEFramework {
                 try
                 {
                     device::AudioOutputPort aPort = device::Host::getInstance().getAudioOutputPort(audioPort);
-                    aPort.setMuted(muted);
                     if(cache_muted != muted)
                     {
+                        aPort.setMuted(muted);
                         cache_muted = muted;
                         JsonObject params;
                         params["muted"] = muted;
@@ -2940,11 +2940,11 @@ namespace WPEFramework {
 
         uint32_t DisplaySettings::setVolumeLevel(const JsonObject& parameters, JsonObject& response)
         {
-                //LOGINFOMETHOD();
+                LOGINFOMETHOD();
                 returnIfParamNotFound(parameters, "volumeLevel");
                 string sLevel = parameters["volumeLevel"].String();
                 float level = 0;
-                int current_volumelevel = 0;
+	        int current_volumelevel = 0;
                 try {
                         level = stof(sLevel);
                 }catch (const device::Exception& err) {
@@ -2957,12 +2957,15 @@ namespace WPEFramework {
                 try
                 {
                         device::AudioOutputPort aPort = device::Host::getInstance().getAudioOutputPort(audioPort);
-			current_volumelevel = (int)aPort.getLevel();
-                        aPort.setLevel(level);
-                        if(current_volumelevel != (int)level)
+		        current_volumelevel = (int)aPort.getLevel();
+			LOGWARN("Shashank....... calling ds mgr setAudioLevel\n");
+                        if(current_volumelevel  != (int)level)
                         {
+                            aPort.setLevel(level);
+                            current_volumelevel  = (int)level;
                             JsonObject params;
                             params["volumeLevel"] = (int)level;
+			    LOGWARN("Shashank......... setVolumeLevel success send notification\n");
                             sendNotify("volumeLevelChanged", params);
                         }
                         success= true;
@@ -2972,6 +2975,7 @@ namespace WPEFramework {
                         LOG_DEVICE_EXCEPTION2(audioPort, sLevel);
                         success = false;
                 }
+		LOGWARN("Exiting DIsplaySettings::setVolumeLevel()\n");
                 returnResponse(success);
         }
 
